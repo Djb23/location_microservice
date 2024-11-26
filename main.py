@@ -1,4 +1,5 @@
-from flask import Flask, request, jsonify
+from functools import wraps
+from flask import Flask, request, jsonify, abort, make_response
 import json
 import os
 
@@ -16,22 +17,31 @@ def save_locations(locations):
     with open(locations_file, 'w') as file:
         json.dump(locations, file, indent=5)
 
-# Search locations based on a partial or full input
+
+# Decorator that ensures request is from an admin, or else returns a 403.
+def authorize_admin(func):
+    @wraps(func)
+    def decorated_function(*args, **kwargs):
+        if request.headers.get("Admin-Password") != admin_pass:
+            abort(make_response(jsonify({"error": "Unauthorized"}), 403))
+        return func(*args, **kwargs)
+
+    return decorated_function
+
+
 @app.route('/search', methods=['GET'])
 def search_locations():
+    """Search locations based on a partial or full input"""
     query = request.args.get('query', '')
     locations = load_locations()
     matches = [f"{loc['city']}, {loc['state']}" for loc in locations if query.lower() in loc['city'].lower()]
     return jsonify(matches)
 
-# Add a new location with password
-@app.route('/add_location', methods=['POST'])
+
+@app.route("/add_location", methods=["POST"])
+@authorize_admin
 def add_location():
-    admin_password = request.headers.get('Admin-Password')
-
-    if admin_password != admin_pass:
-        return jsonify({"error": "Unauthorized"}), 403
-
+    """Add a new location with password"""
     data = request.get_json()
     city_name = data.get("city")
     state_name = data.get("state")
@@ -48,14 +58,10 @@ def add_location():
     return jsonify({"message": f"Location '{city_name}, {state_name}' added."})
 
 
-# Remove a location with password
-@app.route('/remove_location', methods=['DELETE'])
+@app.route("/remove_location", methods=["DELETE"])
+@authorize_admin
 def remove_location():
-    admin_password = request.headers.get('Admin-Password')
-
-    if admin_password != admin_pass:
-        return jsonify({"error": "Unauthorized"}), 403
-
+    """Remove a location with password"""
     data = request.get_json()
     city_name = data.get("city")
     state_name = data.get("state")
